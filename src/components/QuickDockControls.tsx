@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Power, RotateCcw, Moon, Palette, Tv, Shield, Volume2, VolumeX, Maximize2 } from 'lucide-react';
+import { Power, RotateCcw, Moon, Palette, Tv, Volume2, VolumeX, Mic } from 'lucide-react';
 import { HudTheme } from '../types';
 import { ThemeConfig, HUD_THEMES } from '../utils/theme';
 import { sound } from '../utils/audio';
@@ -17,6 +17,8 @@ interface QuickDockControlsProps {
   onTriggerOverload: () => void;
   isSleepMode: boolean;
   onToggleSleepMode: () => void;
+  onOpenVoiceComm: () => void;
+  isVoiceActive?: boolean;
 }
 
 export const QuickDockControls: React.FC<QuickDockControlsProps> = ({
@@ -31,8 +33,23 @@ export const QuickDockControls: React.FC<QuickDockControlsProps> = ({
   onTriggerOverload,
   isSleepMode,
   onToggleSleepMode,
+  onOpenVoiceComm,
+  isVoiceActive = false,
 }) => {
   const dockButtons = [
+    {
+      id: 'voice',
+      icon: Mic,
+      label: 'VOICE',
+      sub: 'COMM',
+      action: () => {
+        sound.playConfirm();
+        onOpenVoiceComm();
+      },
+      title: 'Open Cyber Comm Voice & Terminal AI Assistant [Press V or click]',
+      active: isVoiceActive,
+      specialGlow: true,
+    },
     {
       id: 'power',
       icon: Power,

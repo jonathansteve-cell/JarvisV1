@@ -100,7 +100,7 @@ export const DriveTelemetryCard: React.FC<DriveTelemetryCardProps> = ({
               <circle cx="18" cy="18" r="3" fill={theme.primaryHex} />
 
               {/* Rotating radar sweep arm */}
-              <g transform={`rotate(${rotation} 180 180)`} transform-origin="18 18">
+              <g transform={`rotate(${rotation} 18 18)`}>
                 <line
                   x1="18"
                   y1="18"

@@ -1,0 +1,92 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile and HUD system preferences",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique user ID matching auth UID" },
+        "email": { "type": "string", "description": "User email address" },
+        "displayName": { "type": "string", "description": "User display name", "maxLength": 100 },
+        "photoURL": { "type": "string", "description": "User avatar photo URL", "maxLength": 500 },
+        "theme": { "type": "string", "description": "Active HUD visual theme", "enum": ["classic-cyan", "matrix-green", "cyber-magenta", "solar-amber"] },
+        "soundEnabled": { "type": "boolean", "description": "Audio synthesizer enabled flag" },
+        "showScanlines": { "type": "boolean", "description": "CRT holographic scanline overlay flag" },
+        "stationName": { "type": "string", "description": "Custom HUD terminal station designation", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account registration timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last profile update timestamp" }
+      },
+      "required": ["id", "email", "theme", "soundEnabled", "showScanlines", "createdAt", "updatedAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Daily HUD telemetry task item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Task unique document identifier" },
+        "text": { "type": "string", "description": "Task title or description", "maxLength": 200 },
+        "completed": { "type": "boolean", "description": "Task completion status" },
+        "priority": { "type": "string", "description": "Task urgency priority level", "enum": ["HIGH", "MED", "LOW"] },
+        "ownerId": { "type": "string", "description": "User UID who owns this task" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last modified timestamp" }
+      },
+      "required": ["id", "text", "completed", "ownerId", "createdAt", "updatedAt"]
+    },
+    "ProcessItem": {
+      "title": "ProcessItem",
+      "description": "Telemetry background daemon process",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Process identifier" },
+        "name": { "type": "string", "description": "Process executable name", "maxLength": 60 },
+        "status": { "type": "string", "description": "Execution status", "enum": ["ACTIVE", "IDLE", "BUSY"] },
+        "cpu": { "type": "number", "description": "CPU percentage load" },
+        "memory": { "type": "string", "description": "Memory footprint readout", "maxLength": 30 },
+        "ownerId": { "type": "string", "description": "User UID who configured this process" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last updated timestamp" }
+      },
+      "required": ["id", "name", "status", "cpu", "memory", "ownerId", "updatedAt"]
+    },
+    "DriveTelemetry": {
+      "title": "DriveTelemetry",
+      "description": "Custom drive telemetry parameters and overrides",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Drive identifier" },
+        "letter": { "type": "string", "description": "Drive letter", "maxLength": 5 },
+        "label": { "type": "string", "description": "Drive volume label", "maxLength": 60 },
+        "total": { "type": "string", "description": "Total capacity string", "maxLength": 30 },
+        "used": { "type": "string", "description": "Used capacity string", "maxLength": 30 },
+        "free": { "type": "string", "description": "Free capacity string", "maxLength": 30 },
+        "usedPercent": { "type": "number", "description": "Used percentage" },
+        "freePercent": { "type": "number", "description": "Free percentage" },
+        "temp": { "type": "number", "description": "Temperature in Celsius" },
+        "cacheTotal": { "type": "string", "description": "Cache size", "maxLength": 30 },
+        "cacheRead": { "type": "string", "description": "Cache read rate", "maxLength": 30 },
+        "cacheWrite": { "type": "string", "description": "Cache write rate", "maxLength": 30 },
+        "ownerId": { "type": "string", "description": "User UID" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last updated timestamp" }
+      },
+      "required": ["id", "letter", "label", "total", "used", "free", "usedPercent", "freePercent", "temp", "ownerId", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user profiles and customized HUD settings"
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "User daily HUD tasks with real-time sync"
+    },
+    "/users/{userId}/processes/{processId}": {
+      "schema": "ProcessItem",
+      "description": "User customized telemetry processes"
+    },
+    "/users/{userId}/drives/{driveId}": {
+      "schema": "DriveTelemetry",
+      "description": "User customized drive storage telemetry and overrides"
+    }
+  }
+}

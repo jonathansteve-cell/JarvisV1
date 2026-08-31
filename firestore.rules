@@ -1,0 +1,172 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common Security Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // User Profile Validation Helper
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['id', 'email', 'theme', 'soundEnabled', 'showScanlines', 'createdAt', 'updatedAt'])
+        && data.id == userId
+        && data.email is string && data.email.size() <= 200
+        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100))
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500))
+        && (!('stationName' in data) || (data.stationName is string && data.stationName.size() <= 80))
+        && data.theme in ['classic-cyan', 'matrix-green', 'cyber-magenta', 'solar-amber']
+        && data.soundEnabled is bool
+        && data.showScanlines is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Task Item Validation Helper
+    function isValidTask(data, userId) {
+      return data.keys().hasAll(['id', 'text', 'completed', 'ownerId', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 128
+        && data.ownerId == userId
+        && data.text is string && data.text.size() > 0 && data.text.size() <= 200
+        && data.completed is bool
+        && (!('priority' in data) || data.priority in ['HIGH', 'MED', 'LOW'])
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Process Item Validation Helper
+    function isValidProcessItem(data, userId) {
+      return data.keys().hasAll(['id', 'name', 'status', 'cpu', 'memory', 'ownerId', 'updatedAt'])
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 128
+        && data.ownerId == userId
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 60
+        && data.status in ['ACTIVE', 'IDLE', 'BUSY']
+        && (data.cpu is int || data.cpu is float) && data.cpu >= 0 && data.cpu <= 100
+        && data.memory is string && data.memory.size() <= 30
+        && data.updatedAt is timestamp;
+    }
+
+    // Drive Telemetry Validation Helper
+    function isValidDriveTelemetry(data, userId) {
+      return data.keys().hasAll(['id', 'letter', 'label', 'total', 'used', 'free', 'usedPercent', 'freePercent', 'temp', 'ownerId', 'updatedAt'])
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 128
+        && data.ownerId == userId
+        && data.letter is string && data.letter.size() <= 5
+        && data.label is string && data.label.size() <= 60
+        && data.total is string && data.total.size() <= 30
+        && data.used is string && data.used.size() <= 30
+        && data.free is string && data.free.size() <= 30
+        && (data.usedPercent is int || data.usedPercent is float) && data.usedPercent >= 0 && data.usedPercent <= 100
+        && (data.freePercent is int || data.freePercent is float) && data.freePercent >= 0 && data.freePercent <= 100
+        && (data.temp is int || data.temp is float) && data.temp >= -50 && data.temp <= 150
+        && (!('cacheTotal' in data) || (data.cacheTotal is string && data.cacheTotal.size() <= 30))
+        && (!('cacheRead' in data) || (data.cacheRead is string && data.cacheRead.size() <= 30))
+        && (!('cacheWrite' in data) || (data.cacheWrite is string && data.cacheWrite.size() <= 30))
+        && data.updatedAt is timestamp;
+    }
+
+    // User Profile Documents
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+
+      allow delete: if isOwner(userId);
+
+      // User Tasks Subcollection
+      match /tasks/{taskId} {
+        allow get, list: if isOwner(userId);
+
+        allow create: if isOwner(userId)
+          && isValidId(taskId)
+          && isValidTask(incoming(), userId)
+          && incoming().id == taskId
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+
+        allow update: if isOwner(userId)
+          && isValidId(taskId)
+          && isValidTask(incoming(), userId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time;
+
+        allow delete: if isOwner(userId) && isValidId(taskId);
+      }
+
+      // User Processes Subcollection
+      match /processes/{processId} {
+        allow get, list: if isOwner(userId);
+
+        allow create: if isOwner(userId)
+          && isValidId(processId)
+          && isValidProcessItem(incoming(), userId)
+          && incoming().id == processId
+          && incoming().updatedAt == request.time;
+
+        allow update: if isOwner(userId)
+          && isValidId(processId)
+          && isValidProcessItem(incoming(), userId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().updatedAt == request.time;
+
+        allow delete: if isOwner(userId) && isValidId(processId);
+      }
+
+      // User Drive Telemetry Subcollection
+      match /drives/{driveId} {
+        allow get, list: if isOwner(userId);
+
+        allow create: if isOwner(userId)
+          && isValidId(driveId)
+          && isValidDriveTelemetry(incoming(), userId)
+          && incoming().id == driveId
+          && incoming().updatedAt == request.time;
+
+        allow update: if isOwner(userId)
+          && isValidId(driveId)
+          && isValidDriveTelemetry(incoming(), userId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().updatedAt == request.time;
+
+        allow delete: if isOwner(userId) && isValidId(driveId);
+      }
+    }
+  }
+}

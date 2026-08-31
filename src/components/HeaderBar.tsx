@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Check, Plus, Calendar, Clock, Sparkles, Volume2, VolumeX, ShieldCheck } from 'lucide-react';
+import { Check, Plus, Clock, Volume2, VolumeX, ShieldCheck, Cloud, CloudOff, LogIn, LogOut, User as UserIcon, Mic } from 'lucide-react';
 import { TaskItem } from '../types';
 import { ThemeConfig } from '../utils/theme';
 import { sound } from '../utils/audio';
+import { useFirebase } from '../context/FirebaseContext';
 
 interface HeaderBarProps {
   theme: ThemeConfig;
@@ -14,6 +15,7 @@ interface HeaderBarProps {
   onToggleRealTime: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  onOpenVoiceComm?: () => void;
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
@@ -25,7 +27,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onToggleRealTime,
   soundEnabled,
   onToggleSound,
+  onOpenVoiceComm,
 }) => {
+  const { user, signInWithGoogle, signOutUser, firebaseConnected, userPreferences } = useFirebase();
+
   const [time, setTime] = useState({
     month: 'MARCH',
     year: '2017',
@@ -35,6 +40,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   });
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [newTaskText, setNewTaskText] = useState('');
+  const [isAuthPending, setIsAuthPending] = useState(false);
 
   useEffect(() => {
     if (!isRealTime) {
@@ -80,11 +86,27 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
     }
   };
 
+  const handleAuthAction = async () => {
+    sound.playClick();
+    setIsAuthPending(true);
+    try {
+      if (user) {
+        await signOutUser();
+      } else {
+        await signInWithGoogle();
+      }
+    } catch (err) {
+      console.error('Auth action error:', err);
+    } finally {
+      setIsAuthPending(false);
+    }
+  };
+
   return (
-    <header className="relative w-full z-20 flex flex-col items-center pt-2 px-3 sm:px-6">
+    <header className="relative w-full z-20 flex flex-col items-center pt-2 px-2 sm:px-6">
       {/* Top Telemetry Small Status Strip */}
-      <div className="w-full max-w-7xl flex items-center justify-between text-[10px] tracking-widest text-cyan-500/70 font-mono mb-1 px-4">
-        <div className="flex items-center gap-4">
+      <div className="w-full max-w-7xl flex flex-wrap items-center justify-between gap-2 text-[10px] tracking-widest text-cyan-500/70 font-mono mb-1 px-2 sm:px-4">
+        <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
             <ShieldCheck className="w-3 h-3 text-cyan-400" />
@@ -92,9 +114,70 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           </span>
           <span className="hidden sm:inline-block text-cyan-500/40">|</span>
           <span className="hidden sm:inline-block text-cyan-400/80">CORE STATUS: ONLINE</span>
+          <span className="hidden md:inline-block text-cyan-500/40">|</span>
+          {/* Cloud Firestore Status Badge */}
+          <span className="flex items-center gap-1 text-cyan-300">
+            {user ? (
+              <>
+                <Cloud className="w-3 h-3 text-emerald-400" />
+                <span className="text-emerald-400 font-bold">FIRESTORE: CLOUD SYNC</span>
+              </>
+            ) : (
+              <>
+                <CloudOff className="w-3 h-3 text-amber-400" />
+                <span className="text-amber-400/80">FIRESTORE: LOCAL GUEST</span>
+              </>
+            )}
+          </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Voice Comm / Terminal Assistant Trigger */}
+          {onOpenVoiceComm && (
+            <button
+              onClick={() => {
+                sound.playConfirm();
+                onOpenVoiceComm();
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded border border-cyan-400 bg-cyan-950/70 text-cyan-200 hover:bg-cyan-900/80 hover:border-cyan-300 transition-all text-[9px] font-mono tracking-wider shadow-[0_0_10px_rgba(0,229,255,0.3)] animate-pulse"
+              title="Open Cyber Comm Voice & Terminal AI Assistant [Press V or click]"
+            >
+              <Mic className="w-3.5 h-3.5 text-cyan-300" />
+              <span className="font-bold">VOICE COMM</span>
+            </button>
+          )}
+
+          {/* Google Auth Button */}
+          <button
+            onClick={handleAuthAction}
+            disabled={isAuthPending}
+            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded border transition-all text-[9px] font-mono tracking-wider ${
+              user
+                ? 'border-emerald-500/50 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/60'
+                : 'border-cyan-500/50 bg-cyan-950/50 text-cyan-300 hover:bg-cyan-900/70 hover:border-cyan-400'
+            }`}
+            title={user ? `Signed in as ${user.displayName || user.email}` : 'Sign in with Google to sync telemetry to Cloud Firestore'}
+          >
+            {user?.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt="Avatar"
+                className="w-3.5 h-3.5 rounded-full border border-emerald-400"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <UserIcon className="w-3 h-3 text-cyan-400" />
+            )}
+            <span className="max-w-[120px] truncate">
+              {user ? (user.displayName ? user.displayName.toUpperCase() : 'OPERATOR') : 'GOOGLE AUTH'}
+            </span>
+            {user ? (
+              <LogOut className="w-3 h-3 text-red-400 hover:text-red-300 ml-0.5" />
+            ) : (
+              <LogIn className="w-3 h-3 text-cyan-400 ml-0.5" />
+            )}
+          </button>
+
           <button
             onClick={() => {
               sound.playClick();
@@ -104,7 +187,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             title="Toggle between Screenshot Mode (March 2017) and Live Local Time"
           >
             <Clock className="w-3 h-3 text-cyan-400" />
-            <span>MODE: {isRealTime ? 'LIVE CLOCK' : 'ARCHIVE 2017'}</span>
+            <span className="hidden xs:inline">MODE: {isRealTime ? 'LIVE CLOCK' : 'ARCHIVE 2017'}</span>
           </button>
 
           <button
@@ -170,7 +253,9 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         <div className="absolute inset-0 flex items-center justify-between px-6 sm:px-14 pb-2">
           {/* Left Corner Mini Readout */}
           <div className="hidden lg:flex flex-col text-[10px] text-cyan-400/70 font-mono leading-tight">
-            <span className="tracking-widest font-semibold text-cyan-300">GEO-STATION: ALPHA</span>
+            <span className="tracking-widest font-semibold text-cyan-300">
+              {userPreferences?.stationName || 'GEO-STATION: ALPHA'}
+            </span>
             <span className="text-cyan-500/60">LAT: 43.3603° N</span>
             <span className="text-cyan-500/60">LON: 5.8448° W</span>
             <span className="text-orange-400 font-bold mt-0.5 tracking-wider">{time.dayOfWeek}</span>
@@ -227,6 +312,11 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               >
                 <span className="w-1.5 h-1.5 bg-orange-500 rounded-sm" />
                 TASK FOR TODAY:
+                {user && (
+                  <span className="text-[9px] px-1 py-0.2 bg-cyan-900/60 rounded text-cyan-300 font-mono">
+                    CLOUD
+                  </span>
+                )}
               </span>
               <button
                 onClick={() => {
@@ -284,6 +374,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                     value={newTaskText}
                     onChange={(e) => setNewTaskText(e.target.value)}
                     placeholder="ENTER HUD TASK..."
+                    maxLength={200}
                     autoFocus
                     className="bg-black/80 border border-cyan-500/50 text-cyan-300 text-xs px-2 py-1 rounded focus:outline-none focus:border-cyan-400 w-48 font-mono placeholder:text-cyan-700"
                   />

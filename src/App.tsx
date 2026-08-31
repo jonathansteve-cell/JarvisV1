@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DriveData, TaskItem, ProcessItem, WeatherData, HudTheme } from './types';
 import { HUD_THEMES, ThemeConfig } from './utils/theme';
@@ -10,6 +10,8 @@ import { CenterCoreHUD } from './components/CenterCoreHUD';
 import { RecycleBinWidget } from './components/RecycleBinWidget';
 import { QuickDockControls } from './components/QuickDockControls';
 import { Modals } from './components/Modals';
+import { VoiceAssistantModal, VoiceCommandHandlers } from './components/VoiceAssistantModal';
+import { useFirebase } from './context/FirebaseContext';
 
 // Initial Mock Telemetry Data accurately matched to screenshot
 const INITIAL_DRIVES: DriveData[] = [
@@ -108,11 +110,11 @@ const INITIAL_DRIVES: DriveData[] = [
 ];
 
 const INITIAL_TASKS: TaskItem[] = [
-  { id: 't1', text: 'FINISH AFTER FX PROJECTS', completed: false },
-  { id: 't2', text: 'CHECK NEW TUTORIAL', completed: false },
-  { id: 't3', text: "GO TO JUSTIN'S PRD", completed: false },
-  { id: 't4', text: 'MEET WITH FRIENDS', completed: false },
-  { id: 't5', text: 'CALL MOM', completed: false },
+  { id: 't1', text: 'FINISH AFTER FX PROJECTS', completed: false, priority: 'HIGH' },
+  { id: 't2', text: 'CHECK NEW TUTORIAL', completed: false, priority: 'MED' },
+  { id: 't3', text: "GO TO JUSTIN'S PRD", completed: false, priority: 'HIGH' },
+  { id: 't4', text: 'MEET WITH FRIENDS', completed: false, priority: 'LOW' },
+  { id: 't5', text: 'CALL MOM', completed: false, priority: 'MED' },
 ];
 
 const INITIAL_PROCESSES: ProcessItem[] = [
@@ -144,11 +146,20 @@ const INITIAL_WEATHER: WeatherData = {
 };
 
 export default function App() {
+  const {
+    user,
+    userPreferences,
+    saveUserPreferences,
+    cloudTasks,
+    addTaskToCloud,
+    toggleCloudTask,
+  } = useFirebase();
+
   const [currentThemeKey, setCurrentThemeKey] = useState<HudTheme>('classic-cyan');
   const theme: ThemeConfig = HUD_THEMES[currentThemeKey];
 
   const [drives, setDrives] = useState<DriveData[]>(INITIAL_DRIVES);
-  const [tasks, setTasks] = useState<TaskItem[]>(INITIAL_TASKS);
+  const [localTasks, setLocalTasks] = useState<TaskItem[]>(INITIAL_TASKS);
   const [processes, setProcesses] = useState<ProcessItem[]>(INITIAL_PROCESSES);
   const [weather, setWeather] = useState<WeatherData>(INITIAL_WEATHER);
 
@@ -163,21 +174,71 @@ export default function App() {
   const [isOverloadActive, setIsOverloadActive] = useState(false);
   const [isWeatherOpen, setIsWeatherOpen] = useState(false);
   const [activeAppModal, setActiveAppModal] = useState<string | null>(null);
+  const [isVoiceCommOpen, setIsVoiceCommOpen] = useState(false);
+
+  // Global hotkey 'V' to toggle Voice Comm
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Avoid triggering when user is typing in input or textarea
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+      if (e.key === 'v' || e.key === 'V') {
+        setIsVoiceCommOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Synchronize remote preferences if loaded
+  useEffect(() => {
+    if (userPreferences) {
+      if (userPreferences.theme && HUD_THEMES[userPreferences.theme]) {
+        setCurrentThemeKey(userPreferences.theme);
+      }
+      if (typeof userPreferences.soundEnabled === 'boolean') {
+        setSoundEnabled(userPreferences.soundEnabled);
+        sound.setEnabled(userPreferences.soundEnabled);
+      }
+      if (typeof userPreferences.showScanlines === 'boolean') {
+        setShowScanlines(userPreferences.showScanlines);
+      }
+    }
+  }, [userPreferences]);
+
+  // Determine active tasks (cloud if user logged in, otherwise local)
+  const activeTasks: TaskItem[] = user ? (cloudTasks.length > 0 ? cloudTasks : localTasks) : localTasks;
 
   // Task Handlers
   const handleToggleTask = (id: string) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t))
-    );
+    if (user) {
+      const task = activeTasks.find((t) => t.id === id);
+      if (task) {
+        toggleCloudTask(id, task.completed);
+      }
+    } else {
+      setLocalTasks((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t))
+      );
+    }
   };
 
   const handleAddTask = (text: string) => {
-    const newTask: TaskItem = {
-      id: `task-${Date.now()}`,
-      text: text.toUpperCase(),
-      completed: false,
-    };
-    setTasks((prev) => [newTask, ...prev]);
+    if (user) {
+      addTaskToCloud(text, 'MED');
+    } else {
+      const newTask: TaskItem = {
+        id: `task-${Date.now()}`,
+        text: text.toUpperCase(),
+        completed: false,
+        priority: 'MED',
+      };
+      setLocalTasks((prev) => [newTask, ...prev]);
+    }
   };
 
   // Process Handlers
@@ -199,7 +260,11 @@ export default function App() {
   const handleCycleTheme = () => {
     const themeKeys: HudTheme[] = ['classic-cyan', 'matrix-green', 'cyber-magenta', 'solar-amber'];
     const nextIdx = (themeKeys.indexOf(currentThemeKey) + 1) % themeKeys.length;
-    setCurrentThemeKey(themeKeys[nextIdx]);
+    const nextTheme = themeKeys[nextIdx];
+    setCurrentThemeKey(nextTheme);
+    if (user) {
+      saveUserPreferences({ theme: nextTheme });
+    }
   };
 
   // Overload Shockwave
@@ -208,6 +273,54 @@ export default function App() {
     setTimeout(() => {
       setIsOverloadActive(false);
     }, 1200);
+  };
+
+  // Voice Assistant Directives Execution Engine
+  const voiceCommandHandlers: VoiceCommandHandlers = {
+    onTriggerDiagnostic: () => {
+      setIsDiagnosticActive(true);
+    },
+    onTriggerOverload: () => {
+      handleTriggerOverload();
+    },
+    onCycleTheme: () => {
+      handleCycleTheme();
+    },
+    onToggleScanlines: () => {
+      setShowScanlines((prev) => {
+        const next = !prev;
+        if (user) saveUserPreferences({ showScanlines: next });
+        return next;
+      });
+    },
+    onToggleSound: () => {
+      setSoundEnabled((prev) => {
+        const next = !prev;
+        sound.setEnabled(next);
+        if (user) saveUserPreferences({ soundEnabled: next });
+        return next;
+      });
+    },
+    onToggleSleepMode: () => {
+      setIsSleepMode((prev) => !prev);
+    },
+    onAddTask: (text: string) => {
+      handleAddTask(text);
+    },
+    onOpenWeather: () => {
+      setIsWeatherOpen(true);
+    },
+    onPurgeTrash: () => {
+      sound.playPurge();
+    },
+    onSelectDriveLetter: (letter: string) => {
+      const found = drives.find(
+        (d) => d.letter.toUpperCase() === letter.toUpperCase()
+      );
+      if (found) {
+        setSelectedDrive(found);
+      }
+    },
   };
 
   const leftDrives = drives.slice(0, 3);
@@ -244,7 +357,7 @@ export default function App() {
         {/* TOP HUD HEADER */}
         <HeaderBar
           theme={theme}
-          tasks={tasks}
+          tasks={activeTasks}
           onToggleTask={handleToggleTask}
           onAddTask={handleAddTask}
           isRealTime={isRealTime}
@@ -254,7 +367,13 @@ export default function App() {
             const next = !soundEnabled;
             setSoundEnabled(next);
             sound.setEnabled(next);
+            if (user) {
+              saveUserPreferences({ soundEnabled: next });
+            }
             if (next) sound.playConfirm();
+          }}
+          onOpenVoiceComm={() => {
+            setIsVoiceCommOpen(true);
           }}
         />
 
@@ -316,6 +435,9 @@ export default function App() {
             <span>JARVIS CORE KERNEL: ONLINE</span>
             <span className="text-orange-400 font-bold">TELEMETRY FREQ: 60 FPS</span>
             <span>MEMORY ACCESS: DMA ENABLED</span>
+            <span className={user ? 'text-emerald-400 font-semibold' : 'text-amber-400'}>
+              DB: {user ? 'FIRESTORE REALTIME' : 'LOCAL CACHE'}
+            </span>
           </div>
 
           {/* Bottom Right: Quick Action Controls */}
@@ -324,18 +446,29 @@ export default function App() {
             currentTheme={currentThemeKey}
             onCycleTheme={handleCycleTheme}
             showScanlines={showScanlines}
-            onToggleScanlines={() => setShowScanlines(!showScanlines)}
+            onToggleScanlines={() => {
+              const next = !showScanlines;
+              setShowScanlines(next);
+              if (user) {
+                saveUserPreferences({ showScanlines: next });
+              }
+            }}
             soundEnabled={soundEnabled}
             onToggleSound={() => {
               const next = !soundEnabled;
               setSoundEnabled(next);
               sound.setEnabled(next);
+              if (user) {
+                saveUserPreferences({ soundEnabled: next });
+              }
               if (next) sound.playConfirm();
             }}
             onTriggerDiagnostic={() => setIsDiagnosticActive(true)}
             onTriggerOverload={handleTriggerOverload}
             isSleepMode={isSleepMode}
             onToggleSleepMode={() => setIsSleepMode(!isSleepMode)}
+            onOpenVoiceComm={() => setIsVoiceCommOpen(true)}
+            isVoiceActive={isVoiceCommOpen}
           />
         </footer>
       </div>
@@ -352,6 +485,14 @@ export default function App() {
         weather={weather}
         activeAppModal={activeAppModal}
         onCloseAppModal={() => setActiveAppModal(null)}
+      />
+
+      {/* Voice Assistant and Terminal Console Modal */}
+      <VoiceAssistantModal
+        isOpen={isVoiceCommOpen}
+        onClose={() => setIsVoiceCommOpen(false)}
+        theme={theme}
+        handlers={voiceCommandHandlers}
       />
     </div>
   );
